@@ -1,0 +1,93 @@
+---
+title: "MS_Thesis_power_analysis"
+author: "Nick Foreman"
+date: "3/5/2021"
+output: html_document
+---
+
+First, I'll load the data from a previous study by Peake et al. (2014), which compared the effects of moderate and high intensity exercise on metabolism after exercise. The dataset is a summary of the means and SDs of the different metabolites in this study. They used a slightly different analysis method than I'll be using, but it's comparable enough for the power analysis to work. 
+
+```{r}
+library(pwr2); library(tidyverse)
+
+data <- read_csv(file = "peake_sum_data.csv")
+
+#Factor A is Protocol (MOD vs. HIIT)
+#Factor B is Timepoint (POST vs. 1 H)
+
+metabs <- colnames(data)[4:51]
+all_metabs <- list()
+
+```
+
+For each metabolite in the Peake et al. data, this calculates a pooled SD and divides the difference in means by the pooled SD to find an effect size. This effect size is what I used to find sample size. The pwr2 package documentation says they use methods from a Springer text by Dean & Voss (1999). The number of samples (n) required for each group in the 2x2 ANOVA is reported as part of the output and stored in a list with the metabolite name. 
+
+```{r}
+for (i in 1:length(metabs)){
+  #Prepare data for factor A
+  f_A <- data %>% 
+    drop_na() %>% #get rid of rows with calculations 
+    filter(Timepoint == "POST" | Timepoint == "1 H") %>%
+    select(1:3, contains(metabs[i])) %>%
+    filter(Timepoint=="POST") %>% 
+    pull(metabs[i])
+  
+  #Factor A effect size
+  sd_pool_A <- sqrt(((f_A[2])^2 + (f_A[4])^2)/2)
+  mean_diff_A <- (f_A[1] - f_A[3])
+  effect_size_A <- mean_diff_A/sd_pool_A
+  
+  f_B <- data %>% 
+    drop_na() %>% #get rid of rows with calculations 
+    filter(Timepoint == "POST" | Timepoint == "1 H") %>%
+    select(1:3, contains(metabs[i])) %>%
+    #filter(Timepoint=="POST") %>% 
+    filter(Protocol == "MOD") %>%
+    pull(metabs[i])
+  
+  #Factor B effect size
+  sd_pool_B <- sqrt(((f_B[3])^2 + (f_B[4])^2)/2)
+  mean_diff_B <- abs(f_B[1]-f_B[2])
+  effect_size_B <- mean_diff_B/sd_pool_B
+  
+  results <- ss.2way(a=2, b=2, alpha=0.05, beta=0.2, #80% power
+                     delta.A = NULL, delta.B = NULL,
+                     sigma.A = NULL, sigma.B = NULL,
+                     f.A = effect_size_A, f.B = effect_size_B,
+                     B=100) 
+  #B is the number of iterations, 100 is the default, doesn't seem to change result
+  
+  all_metabs[[i]] <- metabs[i]
+  names(all_metabs[[i]]) <- metabs[i]
+  all_metabs[[i]][[1]] <- as.numeric(results$n)
+  
+}
+
+```
+
+This returns information about the number N in each group for a two-way ANOVA. I'm not certain that a two-way ANOVA is best for me, but I figured it was a good place to start. As you can see from this rough histogram, there's some variety in the number of samples per group, from about 5 to about 100. I'm not quite sure how to handle this, as it's somewhat unique to metabolomics and not something I would find in other lower-dimensionality datasets I've worked with.
+
+```{r}
+hist(as.numeric(unlist(all_metabs)),breaks = 15)
+
+```
+I currently have funding for 10 participants, and I hope to have funding for 20. 
+This outputs a count of the number of metabolites I have sufficient power for (n=10), might be able to get funding for (n=15), would really have to work to get funding for (n=20), and have no way of getting funding for/don't have enough time in a thesis anyways (n>20) 
+
+```{r}
+n_sufficient_pwr <- which(all_metabs <= 10)
+#all_metabs[n_sufficient_pwr]
+length(all_metabs[n_sufficient_pwr])
+
+n_reasonable_pwr <- which(all_metabs <= 15)
+#all_metabs[n_sufficient_pwr]
+length(all_metabs[n_reasonable_pwr])
+
+n_maybe_pwr <- which(all_metabs <= 20)
+#all_metabs[n_sufficient_pwr]
+length(all_metabs[n_maybe_pwr])
+
+n_insufficient_pwr <- which(all_metabs > 20)
+#all_metabs[n_insufficient_pwr]
+length(all_metabs[n_insufficient_pwr])
+```
