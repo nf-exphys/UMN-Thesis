@@ -118,6 +118,8 @@ for (i in 1:length(metabs)){
   mean_diff_A <- (f_A[1] - f_A[3])
   effect_size_A <- mean_diff_A/sd_pool_A
   
+  all_metabs[i][[1]] <- effect_size_A
+  
   f_B <- data %>% 
     drop_na() %>% #get rid of rows with calculations 
     filter(Timepoint == "POST" | Timepoint == "1 H") %>%
@@ -131,12 +133,14 @@ for (i in 1:length(metabs)){
   mean_diff_B <- abs(f_B[1]-f_B[2])
   effect_size_B <- mean_diff_B/sd_pool_B
   
+  all_metabs[i][[1]] <- effect_size_B
+  
   results <- ss.2way(a=2, b=2, alpha=0.05, beta=0.2, #80% power
                      delta.A = NULL, delta.B = NULL,
                      sigma.A = NULL, sigma.B = NULL,
                      f.A = effect_size_A, f.B = effect_size_B,
                      B=100) #B is the number of iterations, 100 is the default, doesn't seem to change result
-  
+
   all_metabs[[i]] <- metabs[i]
   names(all_metabs[[i]]) <- metabs[i]
   all_metabs[[i]][[1]] <- as.numeric(results$n)
@@ -154,3 +158,99 @@ insuff_pwr <- which(all_metabs > 20)
 all_metabs[insuff_pwr]
 
 hist(as.numeric(unlist(all_metabs)),breaks = 15)
+
+
+#### R-M ANOVA power analysis ####
+library(WebPower)
+
+data <- read_csv(file = "peake_sum_data.csv")
+
+#Factor A is Protocol (MOD vs. HIIT)
+#Factor B is Timepoint (POST vs. 1 H)
+
+metabs <- colnames(data)[4:51]
+protocol_ES <- list()
+prepost_ES <- list()
+
+#calculate effect sizes for MOD vs. HIIT immediately after exercise
+for (i in 1:length(metabs)){
+  
+#Prepare data for factor A
+f_A <- data %>% 
+  drop_na() %>% #get rid of rows with calculations 
+  filter(Timepoint == "POST" | Timepoint == "1 H") %>%
+  dplyr::select(1:3, contains(metabs[i])) %>%
+  filter(Timepoint=="POST") %>% 
+  pull(metabs[i])
+
+#Factor A effect size
+sd_pool_A <- sqrt(((f_A[2])^2 + (f_A[4])^2)/2)
+mean_diff_A <- (f_A[1] - f_A[3])
+effect_size_A <- mean_diff_A/sd_pool_A
+
+protocol_ES[[i]] <- effect_size_A
+
+f_B <- data %>% 
+  drop_na() %>% #get rid of rows with calculations 
+  filter(Timepoint == "POST" | Timepoint == "1 H") %>%
+  dplyr::select(1:3, contains(metabs[i])) %>%
+  #filter(Timepoint=="POST") %>% 
+  filter(Protocol == "MOD") %>%
+  pull(metabs[i])
+
+#Factor B effect size
+sd_pool_B <- sqrt(((f_B[3])^2 + (f_B[4])^2)/2)
+mean_diff_B <- abs(f_B[1]-f_B[2])
+effect_size_B <- mean_diff_B/sd_pool_B
+
+prepost_ES[[i]] <- effect_size_B
+}
+
+protocol_ES <- abs(unlist(protocol_ES))
+prepost_ES <- abs(unlist(prepost_ES))
+
+mean(protocol_ES)
+mean(prepost_ES)
+
+median(protocol_ES)
+median(prepost_ES)
+
+fivenum(protocol_ES)
+fivenum(prepost_ES)
+
+#narrow in power analysis to fatty acids, which are most likely to be changed
+fa <- "(C" #find pattern used to label fatty acids in Peake et al.
+where_fa <- list()
+
+#look at each metabolite and find location of fatty acids
+for (i in 1:length(metabs)){
+  is_fa <- str_detect(string = metabs[i], pattern = fixed("(C"))
+  if  (is_fa == T){
+    where_fa <- c(where_fa, i)
+  }
+}
+
+#next steps: 
+  #run power analysis on amino acids
+  #might first need to force all column names tolower() and tweak for loop
+  #that way you can copy/paste the AA names from the internet
+where_fa <- unlist(where_fa)
+
+prepost_ES_fa <- prepost_ES[where_fa]
+protocol_ES_fa <- protocol_ES[where_fa]
+
+#visualize effect sizes for fatty acids
+hist(prepost_ES_fa)
+hist(protocol_ES_fa)
+
+FA_ES_data <- data.frame(protocol_ES_fa, prepost_ES_fa, metabs[where_fa])
+colnames(FA_ES_data) <- c("protocol_ES", "prepost_ES", "FA_name")
+
+#doesn't work, not sure why
+ggplot(data = FA_ES_data, aes(x=protocol_ES)) + 
+  geom_bar() + 
+  geom_text(label=FA_name)
+
+#power analysis for fatty acids
+wp.rmanova(n=10, ng = 2, nm = 2, f=0.6, 
+           nscor = 1, alpha = 0.05, power = NULL)
