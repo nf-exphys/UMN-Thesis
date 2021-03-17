@@ -161,7 +161,7 @@ hist(as.numeric(unlist(all_metabs)),breaks = 15)
 
 
 #### R-M ANOVA power analysis ####
-library(WebPower)
+library(WebPower); library(tidyverse)
 
 data <- read_csv(file = "peake_sum_data.csv")
 
@@ -208,6 +208,17 @@ prepost_ES[[i]] <- effect_size_B
 
 protocol_ES <- abs(unlist(protocol_ES))
 prepost_ES <- abs(unlist(prepost_ES))
+
+all_ES_data <- tibble(metabs, protocol_ES, prepost_ES)
+
+all_ES_data %>%
+  arrange(protocol_ES) %>%
+  mutate(n=row_number()) %>%
+  ggplot(data = .) + geom_bar(aes(x=n, y=protocol_ES), stat = 'identity') + 
+  ggrepel::geom_text_repel(aes(x=n, y=protocol_ES), label = metabs, max.overlaps = 15)
+
+hist(protocol_ES)
+hist(prepost_ES)
 
 mean(protocol_ES)
 mean(prepost_ES)
